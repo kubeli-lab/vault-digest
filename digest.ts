@@ -36,7 +36,7 @@ function collectFrontmatterTags(line: string, tags: Counter): void {
 	if (m === null) {
 		return;
 	}
-	for (const raw of m[1].replace(/[\[\]"']/g, "").split(/[,\s]+/)) {
+	for (const raw of m[1].replace(/[[\]"']/g, "").split(/[,\s]+/)) {
 		const tag = raw.replace(/^#/, "").trim();
 		if (/^[A-Za-z][\w/-]*$/.test(tag)) {
 			bump(tags, tag);

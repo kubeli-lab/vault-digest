@@ -1,9 +1,10 @@
 import GHSyncPlugin from '../main';
-import { notices } from './obsidian-stub';
+import { notices, FileSystemAdapter } from './obsidian-stub';
+(globalThis as any).window = globalThis;
 (globalThis as any).createFragment = (cb: any) => { const t: string[] = []; const f: any = { __text: '', createDiv: (o: any) => { t.push(o.text); const el: any = { style: {}, createEl: () => ({ addEventListener() {} }), createDiv: (o2: any) => { t.push(o2.text); return el; } }; return el; }, createEl: () => ({ addEventListener() {} }) }; cb(f); f.__text = t.join(' '); return f; };
 const [vault, remote, cmd, interactive] = process.argv.slice(2);
 const opened: any[] = [];
-const app: any = { vault: { adapter: { getBasePath: () => vault } }, workspace: { openLinkText: (...a: any[]) => opened.push(a) } };
+const app: any = { vault: { adapter: new FileSystemAdapter(vault) }, workspace: { openLinkText: (...a: any[]) => opened.push(a) } };
 const p: any = new GHSyncPlugin(app, {} as any);
 p.settings = { remoteURL: remote, gitLocation: '', branch: process.env.BRANCH || 'main', syncinterval: 0, isSyncOnLoad: false, checkStatusOnLoad: false, noticeLevel: 'ALL', showSyncSuccessNotice: true };
 (async () => {

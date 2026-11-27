@@ -4,4 +4,5 @@ export class Plugin { app: any; manifest: any; constructor(app: any, manifest: a
   addCommand() {} addRibbonIcon() { return { addClass() {} }; } addSettingTab() {} registerInterval() {} async loadData() { return {}; } async saveData() {} }
 export class PluginSettingTab { constructor(public app: any, public plugin: any) {} }
 export class Setting { constructor(_: any) {} setName() { return this; } setDesc() { return this; } addText() { return this; } addToggle() { return this; } addDropdown() { return this; } addButton() { return this; } }
-export class Modal {} export class App {} export class Editor {} export class MarkdownView {} export class Vault {}
+export class App {}
+export class FileSystemAdapter { constructor(private base: string) {} getBasePath() { return this.base; } }

@@ -31,7 +31,7 @@ Messages are size-limited however many notes change: the subject stays under 100
 ![](screenshots/ribbon-button.png)
 
 ## How to Use
-Click the **Sync with Remote** ribbon icon to pull changes from your GitHub repo and push local changes. 
+Click the **Sync with remote** ribbon icon to pull changes from your GitHub repo and push local changes. 
 If there are any conflicts, the unmerged files will be opened for you to resolve (or just push again with the unresolved conflicts - that should work too).
 
 ## Setup
@@ -76,7 +76,7 @@ You can reduce UI noise from sync operations with the `Notice level` setting:
 - `WARNING` shows only warnings and errors.
 - `ERROR` shows only error notices, so sync can run mostly in the background.
 
-You can also use `Hide Success Message` to suppress the single confirmation notice shown after a successful sync. With the toggle off and `Notice level` set to `ALL`, a successful sync shows exactly one success message instead of multiple informational notices.
+You can also use `Hide success message` to suppress the single confirmation notice shown after a successful sync. With the toggle off and `Notice level` set to `ALL`, a successful sync shows exactly one success message instead of multiple informational notices.
 
 If your git binary is not accessible from your system PATH (i.e. if you open up Command Prompt or Terminal and can't use git), you need to provide its location. I initialize git only when launching Cmder, so I need to input a custom path like so: `C:/Users/Kevin/scoop/apps/cmder-full/current/vendor/git-for-windows/cmd/`. Note that I excluded `git.exe` from the end of the path.
 

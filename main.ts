@@ -1,6 +1,9 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, Vault } from 'obsidian';
-import { simpleGit, SimpleGit, CleanOptions, SimpleGitOptions, StatusResult, DiffResult } from 'simple-git';
-import { setIntervalAsync, clearIntervalAsync } from 'set-interval-async';
+import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { simpleGit, SimpleGit, SimpleGitOptions, StatusResult, DiffResult } from 'simple-git';
+import { execFile } from 'child_process';
+import { promises as fs } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { analyzeDiff, digestSummary, digestDetails, fitSubject, fitBody, MAX_DIGEST_LINES, NoteDigest } from './digest';
 
 // Message of the stash created around a pull; identifies our own entries only.
@@ -114,7 +117,7 @@ export default class GHSyncPlugin extends Plugin {
 				'--', '*.md',
 			]);
 			return analyzeDiff(diff);
-		} catch (e) {
+		} catch {
 			return undefined;
 		}
 	}
@@ -180,7 +183,7 @@ export default class GHSyncPlugin extends Plugin {
 			for (const ref of refs.reverse()) {
 				await git.raw(['stash', 'drop', ref]);
 			}
-		} catch (e) {
+		} catch {
 			// Best effort: a leftover stash is harmless.
 		}
 	}
@@ -192,13 +195,21 @@ export default class GHSyncPlugin extends Plugin {
 	}
 
 	private isValidBranchName(name: string): boolean {
-		return /^[A-Za-z0-9_][A-Za-z0-9._\/-]*$/.test(name) && !name.includes('..') && !name.endsWith('/') && !name.endsWith('.lock');
+		return /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/.test(name) && !name.includes('..') && !name.endsWith('/') && !name.endsWith('.lock');
+	}
+
+	// Absolute path of the vault folder (desktop only: the vault is on disk).
+	private vaultPath(): string {
+		const adapter = this.app.vault.adapter;
+		if (adapter instanceof FileSystemAdapter) {
+			return adapter.getBasePath();
+		}
+		throw new Error("Vault Digest needs a vault stored on disk (desktop only).");
 	}
 
 	private initGit(): void {
 		simpleGitOptions = {
-			//@ts-ignore
-		    baseDir: this.app.vault.adapter.getBasePath(),
+		    baseDir: this.vaultPath(),
 		    binary: this.settings.gitLocation + "git",
 		    maxConcurrentProcesses: 6,
 		    trimmed: false,
@@ -213,11 +224,7 @@ export default class GHSyncPlugin extends Plugin {
 	// because Obsidian launched from the Dock does not inherit the shell PATH,
 	// and merge tools such as `code` live in /usr/local/bin or /opt/homebrew/bin.
 	private runGit(args: string[]): Promise<string> {
-		const { execFile } = require("child_process");
-		const os = require("os");
-		const path = require("path");
-		//@ts-ignore
-		const cwd: string = this.app.vault.adapter.getBasePath();
+		const cwd = this.vaultPath();
 		const extra = os.platform() === "win32" ? [] : ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"];
 		const env = {
 			...process.env,
@@ -225,8 +232,8 @@ export default class GHSyncPlugin extends Plugin {
 			GIT_TERMINAL_PROMPT: "0",
 		};
 		return new Promise((resolve, reject) => {
-			execFile(this.settings.gitLocation + "git", args, { cwd, env, maxBuffer: 10 * 1024 * 1024 },
-				(err: Error | null, stdout: string, stderr: string) => {
+			execFile(this.settings.gitLocation + "git", args, { cwd, env, maxBuffer: 10 * 1024 * 1024, encoding: "utf8" },
+				(err, stdout, stderr) => {
 					if (err) {
 						reject(new Error(stderr || err.message));
 					} else {
@@ -248,7 +255,7 @@ export default class GHSyncPlugin extends Plugin {
 		}
 		this.mergetoolOpen = true;
 
-		let resumeSync = false;
+		let resumeSync: boolean;
 		try {
 			this.initGit();
 
@@ -263,11 +270,11 @@ export default class GHSyncPlugin extends Plugin {
 			}
 
 			const configured = (await git.raw(['config', '--get', 'merge.tool']).catch(() => "")).trim();
-			const tool = configured || (require("os").platform() === "darwin" ? "opendiff" : "");
+			const tool = configured || (os.platform() === "darwin" ? "opendiff" : "");
 			if (!tool) {
 				this.showNotice("No git merge tool configured. Run: git config --global merge.tool <tool> (for example vscode, meld or kdiff3). The conflicted files are opened so you can edit them.", 'WARNING', 15000);
 				for (const c of status.conflicted) {
-					this.app.workspace.openLinkText("", c, true);
+					void this.app.workspace.openLinkText("", c, true);
 				}
 				return;
 			}
@@ -289,7 +296,7 @@ export default class GHSyncPlugin extends Plugin {
 					...(configured ? [] : ['--tool=' + tool]),
 					'--', ...forTool,
 				]);
-			} catch (e) {
+			} catch {
 				// Non-zero exit: the tool was closed without resolving every file.
 			}
 
@@ -332,7 +339,7 @@ export default class GHSyncPlugin extends Plugin {
 					this.showNotice("Vault Digest: push rejected " + maxAttempts + " times, another device is pushing at the same time. Your commit is kept locally: sync again.", 'WARNING', 10000);
 					return false;
 				}
-				await new Promise((resolve) => setTimeout(resolve, 150 + Math.random() * 450 * attempt));
+				await new Promise((resolve) => window.setTimeout(resolve, 150 + Math.random() * 450 * attempt));
 				try {
 					await git.pull('origin', this.branch, { '--rebase': null });
 				} catch (pullError) {
@@ -364,10 +371,7 @@ export default class GHSyncPlugin extends Plugin {
 	// Conflicted files that still need a person: conflict markers still in the
 	// file, or a modify/delete decision not taken yet.
 	private async findUnresolvedConflicts(status: StatusResult): Promise<string[]> {
-		const fs = require("fs").promises;
-		const path = require("path");
-		//@ts-ignore
-		const base: string = this.app.vault.adapter.getBasePath();
+		const base = this.vaultPath();
 		const needDecision = new Set(this.modifyDeleteFiles(status));
 		const unresolved: string[] = [];
 		for (const file of status.conflicted) {
@@ -376,11 +380,11 @@ export default class GHSyncPlugin extends Plugin {
 				continue;
 			}
 			try {
-				const text: string = await fs.readFile(path.join(base, file), "utf8");
+				const text = await fs.readFile(path.join(base, file), "utf8");
 				if (/^<<<<<<< /m.test(text) && /^>>>>>>> /m.test(text)) {
 					unresolved.push(file);
 				}
-			} catch (e) {
+			} catch {
 				// Unreadable (e.g. deleted on both sides): counts as unresolved.
 				unresolved.push(file);
 			}
@@ -432,8 +436,7 @@ export default class GHSyncPlugin extends Plugin {
 		}
 		if (this.shouldShowNotice('WARNING')) {
 			const fragment = createFragment((f) => {
-				const text = f.createDiv({ text: conflictMsg });
-				text.style.whiteSpace = "pre-line";
+				f.createDiv({ text: conflictMsg, cls: "vault-digest-notice-text" });
 				const button = f.createEl("button", { text: "Resolve with git mergetool" });
 				button.addEventListener("click", () => { void this.ResolveConflicts(); });
 				for (const file of conflicted.filter((c) => decisions.has(c))) {
@@ -487,16 +490,14 @@ export default class GHSyncPlugin extends Plugin {
 
 		this.initGit();
 
-		let os = require("os");
-		let hostname = os.hostname();
+		const hostname = os.hostname();
 
-		let statusResult = await git.status().catch((e) => {
+		const initialStatus = await git.status().catch(() => undefined);
+		if (!initialStatus) {
 			this.showNotice("Vault is not a Git repo or git binary cannot be found.", 'ERROR', 10000);
-			return; })
-
-		if (!statusResult) {
 			return;
 		}
+		let statusResult: StatusResult = initialStatus;
 
 		const gitName = (await git.raw(['config', '--get', 'user.name']).catch(() => "")).trim();
 		const gitEmail = (await git.raw(['config', '--get', 'user.email']).catch(() => "")).trim();
@@ -577,17 +578,17 @@ export default class GHSyncPlugin extends Plugin {
 					try {
 						await git.pull('origin', this.branch, { '--rebase': null });
 						pulled = true;
-					} catch (e) {
+					} catch {
 						await git.rebase(['--abort']).catch(() => {});
 					}
 					if (stashed) {
 						// simple-git does not always throw when the pop stops on a conflict
 						// (exit code 1 without stderr), so the status is always checked.
-						let popError: unknown;
+						let popError: string | undefined;
 						try {
 							await git.stash(['pop']);
 						} catch (e) {
-							popError = e;
+							popError = e instanceof Error ? e.message : String(e);
 						}
 						const popStatus = await git.status().catch(() => undefined);
 						if (!popStatus) {
@@ -601,7 +602,7 @@ export default class GHSyncPlugin extends Plugin {
 							return;
 						}
 						if (popError) {
-							this.showNotice(String(popError) + "\nVault Digest: your local edits are kept in a git stash (git stash list).", 'ERROR', 10000);
+							this.showNotice(popError + "\nVault Digest: your local edits are kept in a git stash (git stash list).", 'ERROR', 10000);
 							return;
 						}
 					}
@@ -639,12 +640,12 @@ export default class GHSyncPlugin extends Plugin {
 		    try {
 		    	try {
 		    		await git.pull('origin', this.branch, { '--rebase': null });
-		    	} catch (rebaseError) {
+		    	} catch {
 		    		await git.rebase(['--abort']).catch(() => {});
 		    		await git.pull('origin', this.branch, { '--no-rebase': null });
 		    	}
-		    } catch (e) {
-		    	let conflictStatus = await git.status().catch((error) => { this.showNotice(error, 'ERROR', 10000); return; });
+		    } catch {
+		    	const conflictStatus = await git.status().catch((error) => { this.showNotice(error, 'ERROR', 10000); return; });
 		    	if (!conflictStatus) {
 		    		return;
 		    	}
@@ -683,8 +684,7 @@ export default class GHSyncPlugin extends Plugin {
 		try {
 			// Own client: the shared one belongs to the running sync.
 			const startGit = simpleGit({
-				//@ts-ignore
-			    baseDir: this.app.vault.adapter.getBasePath(),
+			    baseDir: this.vaultPath(),
 			    binary: this.settings.gitLocation + "git",
 			    maxConcurrentProcesses: 6,
 			    trimmed: false,
@@ -699,7 +699,7 @@ export default class GHSyncPlugin extends Plugin {
 				// Automatically sync if needed
 				if (this.settings.isSyncOnLoad == true)
 				{
-					this.SyncNotes();
+					void this.SyncNotes();
 				}
 				else
 				{
@@ -710,7 +710,7 @@ export default class GHSyncPlugin extends Plugin {
 			{
 				this.showNotice("Vault Digest: up to date with remote.", 'INFO');
 			}
-		} catch (e) {
+		} catch {
 			// don't care
 			// based
 		}
@@ -719,8 +719,8 @@ export default class GHSyncPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		const ribbonIconEl = this.addRibbonIcon('github', 'Sync with Remote', (evt: MouseEvent) => {
-			this.SyncNotes(true);
+		const ribbonIconEl = this.addRibbonIcon('github', 'Sync with remote', () => {
+			void this.SyncNotes(true);
 		});
 		ribbonIconEl.addClass('gh-sync-ribbon');
 
@@ -733,10 +733,10 @@ export default class GHSyncPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: 'github-sync-command',
-			name: 'Sync with Remote',
+			id: 'sync-with-remote',
+			name: 'Sync with remote',
 			callback: () => {
-				this.SyncNotes(true);
+				void this.SyncNotes(true);
 			}
 		});
 
@@ -745,33 +745,27 @@ export default class GHSyncPlugin extends Plugin {
 
 		if (!isNaN(this.settings.syncinterval))
 		{
-			let interval: number = this.settings.syncinterval;
+			const interval: number = this.settings.syncinterval;
 			if (interval >= 1)
 			{
-				try {
-					setIntervalAsync(async () => {
-						await this.SyncNotes();
-					}, interval * 60 * 1000);
-					//this.registerInterval(setInterval(this.SyncNotes, interval * 6 * 1000));
-					this.showNotice("Auto sync enabled", 'INFO');
-				} catch (e) {
-					
-				}
+				// Cleared by Obsidian when the plugin unloads. SyncNotes skips a tick
+				// while a sync is still running, so ticks never overlap.
+				this.registerInterval(window.setInterval(() => {
+					void this.SyncNotes();
+				}, interval * 60 * 1000));
+				this.showNotice("Auto sync enabled", 'INFO');
 			}
 		}
 
 		if (this.settings.checkStatusOnLoad)
 		{
-			this.CheckStatusOnStart();
+			void this.CheckStatusOnStart();
 		}
 	}
 
-	onunload() {
-
-	}
-
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const saved = (await this.loadData()) as Partial<GHSyncSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
 		if ((this.settings.noticeLevel as LegacyNoticeLevelSetting) === 'WARNINGS') {
 			this.settings.noticeLevel = 'WARNING';
@@ -796,14 +790,14 @@ class GHSyncSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		const howto = containerEl.createEl("div", { cls: "howto" });
-		howto.createEl("div", { text: "How to use this plugin", cls: "howto_title" });
+		const howto = containerEl.createDiv({ cls: "howto" });
+		howto.createDiv({ text: "How to use this plugin", cls: "howto_title" });
 		howto.createEl("small", { text: "Grab your GitHub repository's HTTPS or SSH url and paste it into the settings here. If you're not authenticated, the first sync with this plugin should prompt you to authenticate. If you've already setup SSH on your device with GitHub, you won't need to authenticate - just paste your repo's SSH url into the settings here.", cls: "howto_text" });
 		howto.createEl("br");
         const linkEl = howto.createEl('p');
-        linkEl.createEl('span', { text: 'See the ' });
+        linkEl.createSpan({ text: 'See the ' });
         linkEl.createEl('a', { href: 'https://github.com/kubeli-lab/vault-digest/blob/main/README.md', text: 'README' });
-        linkEl.createEl('span', { text: ' for more information and troubleshooting.' });
+        linkEl.createSpan({ text: ' for more information and troubleshooting.' });
 
 		new Setting(containerEl)
 			.setName('Remote URL')
@@ -829,7 +823,7 @@ class GHSyncSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('git binary location')
+			.setName('Git binary location')
 			.setDesc('This is optional! Set this only if git is not findable via your system PATH, then provide its location here. See README for more info.')
 			.addText(text => text
 				.setPlaceholder('')
@@ -854,7 +848,7 @@ class GHSyncSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Hide Success Message')
+			.setName('Hide success message')
 			.setDesc('Hide the single success notice shown when a sync finishes successfully.')
 			.addToggle((toggle) => toggle
 				.setValue(!this.plugin.settings.showSyncSuccessNotice)

@@ -2,7 +2,7 @@
 	"id": "vault-digest",
 	"name": "Vault Digest",
 	"version": "1.2.5",
-	"minAppVersion": "0.15.0",
+	"minAppVersion": "0.16.0",
 	"description": "Sync your vault to GitHub with a clean linear history: rebase instead of merge commits, a lock against overlapping syncs, and commit messages that summarise your notes.",
 	"author": "Deke Li",
 	"authorUrl": "https://github.com/lideke",

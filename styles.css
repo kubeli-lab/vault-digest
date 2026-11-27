@@ -40,3 +40,7 @@ If your plugin does not need CSS, delete this file.
     width: 30em;
 }
 
+
+.vault-digest-notice-text {
+    white-space: pre-line;
+}
