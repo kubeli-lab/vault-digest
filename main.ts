@@ -1,4 +1,4 @@
-import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import { simpleGit, SimpleGit, SimpleGitOptions, StatusResult, DiffResult } from 'simple-git';
 import { execFile } from 'child_process';
 import { promises as fs } from 'fs';
@@ -777,6 +777,14 @@ export default class GHSyncPlugin extends Plugin {
 	}
 }
 
+type SettingKey = 'remoteURL' | 'branch' | 'gitLocation' | 'noticeLevel' | 'hideSyncSuccessNotice'
+	| 'checkStatusOnLoad' | 'isSyncOnLoad' | 'syncinterval';
+
+const README_URL = 'https://github.com/lideke/vault-digest/blob/main/README.md';
+
+const asText = (value: unknown): string =>
+	typeof value === 'string' ? value : typeof value === 'number' && !isNaN(value) ? String(value) : '';
+
 class GHSyncSettingTab extends PluginSettingTab {
 	plugin: GHSyncPlugin;
 
@@ -785,106 +793,171 @@ class GHSyncSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	// Declarative settings (Obsidian 1.13+): rendered by Obsidian and indexed by
+	// the settings search. display() below renders the same list on older versions.
+	getSettingDefinitions(): SettingDefinitionItem<SettingKey>[] {
+		return [
+			{
+				name: 'How to use this plugin',
+				desc: createFragment((f) => {
+					f.appendText("Paste your GitHub repository's HTTPS or SSH URL below. With HTTPS, the first sync prompts you to authenticate. With SSH already set up for GitHub on this device, no authentication is needed. See the ");
+					f.createEl('a', { href: README_URL, text: 'README' });
+					f.appendText(' for more information and troubleshooting.');
+				}),
+				searchable: false,
+			},
+			{
+				name: 'Remote URL',
+				desc: 'HTTPS or SSH URL of the GitHub repository to sync with.',
+				aliases: ['github', 'repository', 'origin'],
+				control: { type: 'text', key: 'remoteURL', placeholder: 'git@github.com:user/vault.git' },
+			},
+			{
+				name: 'Main branch',
+				desc: 'Branch to pull from and push to. The vault must be on this branch. Default: main.',
+				control: { type: 'text', key: 'branch', placeholder: 'main' },
+			},
+			{
+				name: 'Git binary location',
+				desc: 'Optional. Set this only if git cannot be found through your system PATH. See the README for more info.',
+				control: { type: 'text', key: 'gitLocation' },
+			},
+			{
+				type: 'group',
+				heading: 'Notices',
+				items: [
+					{
+						name: 'Notice level',
+						desc: 'Choose which Vault Digest notices are shown.',
+						control: { type: 'dropdown', key: 'noticeLevel', options: { ALL: 'All', WARNING: 'Warnings and errors', ERROR: 'Errors only' } },
+					},
+					{
+						name: 'Hide success message',
+						desc: 'Hide the notice shown when a sync finishes successfully.',
+						control: { type: 'toggle', key: 'hideSyncSuccessNotice' },
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'Automatic sync',
+				items: [
+					{
+						name: 'Check status on startup',
+						desc: 'Check whether you are behind the remote when Obsidian starts.',
+						control: { type: 'toggle', key: 'checkStatusOnLoad' },
+					},
+					{
+						name: 'Auto sync on startup',
+						desc: 'Sync with the remote when Obsidian starts if there are unsynced changes.',
+						control: { type: 'toggle', key: 'isSyncOnLoad' },
+					},
+					{
+						name: 'Auto sync at interval',
+						desc: 'Minutes between automatic syncs. 0 disables auto sync. Restart Obsidian to apply.',
+						control: { type: 'number', key: 'syncinterval', min: 0, step: 1, placeholder: '0' },
+					},
+				],
+			},
+		];
+	}
+
+	getControlValue(key: string): unknown {
+		const settings = this.plugin.settings;
+		if (key === 'hideSyncSuccessNotice') {
+			return !settings.showSyncSuccessNotice;
+		}
+		return settings[key as keyof GHSyncSettings];
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const settings = this.plugin.settings;
+		switch (key as SettingKey) {
+			case 'remoteURL':
+				settings.remoteURL = asText(value);
+				break;
+			case 'gitLocation':
+				settings.gitLocation = asText(value);
+				break;
+			case 'branch':
+				settings.branch = asText(value).trim() || 'main';
+				break;
+			case 'noticeLevel':
+				settings.noticeLevel = asText(value) as NoticeLevelSetting;
+				break;
+			case 'hideSyncSuccessNotice':
+				settings.showSyncSuccessNotice = value !== true;
+				break;
+			case 'checkStatusOnLoad':
+				settings.checkStatusOnLoad = value === true;
+				break;
+			case 'isSyncOnLoad':
+				settings.isSyncOnLoad = value === true;
+				break;
+			case 'syncinterval':
+				settings.syncinterval = Number(value);
+				break;
+			default:
+				return;
+		}
+		await this.plugin.saveSettings();
+	}
+
+	// Fallback for Obsidian older than 1.13, which never calls getSettingDefinitions().
 	display(): void {
-		const {containerEl} = this;
-
+		const { containerEl } = this;
 		containerEl.empty();
+		for (const item of this.getSettingDefinitions()) {
+			if ('type' in item && item.type === 'group') {
+				if (item.heading) {
+					new Setting(containerEl).setName(item.heading).setHeading();
+				}
+				for (const child of item.items ?? []) {
+					if (!('type' in child)) {
+						this.renderFallback(containerEl, child);
+					}
+				}
+			} else if (!('type' in item)) {
+				this.renderFallback(containerEl, item);
+			}
+		}
+	}
 
-		const howto = containerEl.createDiv({ cls: "howto" });
-		howto.createDiv({ text: "How to use this plugin", cls: "howto_title" });
-		howto.createEl("small", { text: "Grab your GitHub repository's HTTPS or SSH url and paste it into the settings here. If you're not authenticated, the first sync with this plugin should prompt you to authenticate. If you've already setup SSH on your device with GitHub, you won't need to authenticate - just paste your repo's SSH url into the settings here.", cls: "howto_text" });
-		howto.createEl("br");
-        const linkEl = howto.createEl('p');
-        linkEl.createSpan({ text: 'See the ' });
-        linkEl.createEl('a', { href: 'https://github.com/kubeli-lab/vault-digest/blob/main/README.md', text: 'README' });
-        linkEl.createSpan({ text: ' for more information and troubleshooting.' });
-
-		new Setting(containerEl)
-			.setName('Remote URL')
-			.setDesc('')
-			.addText(text => text
-				.setPlaceholder('')
-				.setValue(this.plugin.settings.remoteURL)
-				.onChange(async (value) => {
-					this.plugin.settings.remoteURL = value;
-					await this.plugin.saveSettings();
-				})
-        	.inputEl.addClass('my-plugin-setting-text'));
-
-		new Setting(containerEl)
-			.setName('Main branch')
-			.setDesc('Branch to pull from and push to. The vault must be on this branch. Default: main.')
-			.addText(text => text
-				.setPlaceholder('main')
-				.setValue(this.plugin.settings.branch)
-				.onChange(async (value) => {
-					this.plugin.settings.branch = value.trim() || 'main';
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Git binary location')
-			.setDesc('This is optional! Set this only if git is not findable via your system PATH, then provide its location here. See README for more info.')
-			.addText(text => text
-				.setPlaceholder('')
-				.setValue(this.plugin.settings.gitLocation)
-				.onChange(async (value) => {
-					this.plugin.settings.gitLocation = value;
-					await this.plugin.saveSettings();
-				})
-        	.inputEl.addClass('my-plugin-setting-text2'));
-
-		new Setting(containerEl)
-			.setName('Notice level')
-			.setDesc('Choose which Vault Digest notices are shown in the Obsidian UI.')
-			.addDropdown((dropdown) => dropdown
-				.addOption('ALL', 'ALL')
-				.addOption('WARNING', 'WARNING')
-				.addOption('ERROR', 'ERROR')
-				.setValue(this.plugin.settings.noticeLevel)
-				.onChange(async (value: NoticeLevelSetting) => {
-					this.plugin.settings.noticeLevel = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Hide success message')
-			.setDesc('Hide the single success notice shown when a sync finishes successfully.')
-			.addToggle((toggle) => toggle
-				.setValue(!this.plugin.settings.showSyncSuccessNotice)
-				.onChange(async (value) => {
-					this.plugin.settings.showSyncSuccessNotice = !value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Check status on startup')
-			.setDesc('Check to see if you are behind remote when you start Obsidian.')
-			.addToggle((toggle) => toggle
-				.setValue(this.plugin.settings.checkStatusOnLoad)
-				.onChange(async (value) => {
-					this.plugin.settings.checkStatusOnLoad = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Auto sync on startup')
-			.setDesc('Automatically sync with remote when you start Obsidian if there are unsynced changes.')
-			.addToggle((toggle) => toggle
-				.setValue(this.plugin.settings.isSyncOnLoad)
-				.onChange(async (value) => {
-					this.plugin.settings.isSyncOnLoad = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Auto sync at interval')
-			.setDesc('Set minute interval after which your vault is synced automatically. Auto sync is disabled if this field is left empty or not a positive integer. Restart Obsidan to take effect.')
-			.addText(text => text
-				.setValue(String(this.plugin.settings.syncinterval))
-				.onChange(async (value) => {
-					this.plugin.settings.syncinterval = Number(value);
-					await this.plugin.saveSettings();
-				}));
+	private renderFallback(containerEl: HTMLElement, def: SettingDefinition<SettingKey>): void {
+		const setting = new Setting(containerEl).setName(def.name);
+		if (def.desc) {
+			setting.setDesc(def.desc);
+		}
+		const control = def.control;
+		if (!control) {
+			return;
+		}
+		const save = (value: unknown) => { void this.setControlValue(control.key, value); };
+		const current = this.getControlValue(control.key);
+		switch (control.type) {
+			case 'text':
+				setting.addText((text) => text
+					.setPlaceholder(control.placeholder ?? '')
+					.setValue(asText(current))
+					.onChange(save));
+				break;
+			case 'number':
+				setting.addText((text) => text
+					.setPlaceholder(control.placeholder ?? '')
+					.setValue(asText(current))
+					.onChange((value) => save(Number(value))));
+				break;
+			case 'toggle':
+				setting.addToggle((toggle) => toggle
+					.setValue(current === true)
+					.onChange(save));
+				break;
+			case 'dropdown':
+				setting.addDropdown((dropdown) => dropdown
+					.addOptions(control.options)
+					.setValue(asText(current))
+					.onChange(save));
+				break;
+		}
 	}
 }
