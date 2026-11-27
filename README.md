@@ -31,7 +31,7 @@ Messages are size-limited however many notes change: the subject stays under 100
 ![](screenshots/ribbon-button.png)
 
 ## How to Use
-Click the **Sync with Remote** ribbon icon to pull changes from your GitHub repo and push local changes. 
+Click the **Sync with remote** ribbon icon to pull changes from your GitHub repo and push local changes. 
 If there are any conflicts, the unmerged files will be opened for you to resolve (or just push again with the unresolved conflicts - that should work too).
 
 ## Setup
@@ -76,11 +76,20 @@ You can reduce UI noise from sync operations with the `Notice level` setting:
 - `WARNING` shows only warnings and errors.
 - `ERROR` shows only error notices, so sync can run mostly in the background.
 
-You can also use `Hide Success Message` to suppress the single confirmation notice shown after a successful sync. With the toggle off and `Notice level` set to `ALL`, a successful sync shows exactly one success message instead of multiple informational notices.
+You can also use `Hide success message` to suppress the single confirmation notice shown after a successful sync. With the toggle off and `Notice level` set to `ALL`, a successful sync shows exactly one success message instead of multiple informational notices.
 
 If your git binary is not accessible from your system PATH (i.e. if you open up Command Prompt or Terminal and can't use git), you need to provide its location. I initialize git only when launching Cmder, so I need to input a custom path like so: `C:/Users/Kevin/scoop/apps/cmder-full/current/vendor/git-for-windows/cmd/`. Note that I excluded `git.exe` from the end of the path.
 
 You can also include your GitHub username and personal access token in the remote url. Like so: `https://{username}:{personal access token}@github.com/{username}/{repository name}`. This is not recommended anymore, but it was how the plugin worked prior to 1.0.4. If you're doing this, you'll have to add `.obsidian/plugins/vault-digest/data.json` to your `.gitignore`.
+
+## Security and privacy
+
+Vault Digest is desktop only. It needs two capabilities that the Obsidian community directory flags:
+
+- **Shell execution**: the plugin runs the `git` binary (through [simple-git](https://github.com/steveukx/git-js), and `git mergetool` when you resolve conflicts). It only runs `git`, from the location in the settings or your system PATH, inside your vault folder.
+- **Filesystem access**: simple-git uses the Node.js `fs` module to check that the vault folder exists. The plugin itself reads conflicted files through the Obsidian vault adapter.
+
+Network access goes through git only, to the remote URL you configure. The plugin has no telemetry, and the commit message summary is computed locally: no diff is sent anywhere.
 
 ## Contributing
 
