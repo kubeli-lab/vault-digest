@@ -25,5 +25,8 @@
 	},
 	"dependencies": {
 		"simple-git": "^4.1.0"
+	},
+	"overrides": {
+		"eslint-plugin-n": "17.24.0"
 	}
 }
