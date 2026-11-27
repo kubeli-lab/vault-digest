@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"lint": "eslint .",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"test": "node test/run.cjs"
 	},
@@ -14,12 +15,13 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
-		"@typescript-eslint/eslint-plugin": "8.73.0",
-		"@typescript-eslint/parser": "8.73.0",
 		"esbuild": "0.28.1",
+		"eslint": "9.39.5",
+		"eslint-plugin-obsidianmd": "0.6.0",
 		"obsidian": "1.14.4",
 		"tslib": "2.4.0",
-		"typescript": "5.9.3"
+		"typescript": "5.9.3",
+		"typescript-eslint": "8.74.0"
 	},
 	"dependencies": {
 		"simple-git": "^4.1.0"
