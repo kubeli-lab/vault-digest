@@ -1,0 +1,46 @@
+name: CI
+
+# Runs the Obsidian community review rules, the build and the sync simulation
+# on every pull request, so a change that the review would flag fails here first.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.x"
+
+      # --ignore-scripts: no package install script runs on the runner.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # eslint-plugin-obsidianmd: the rules of the community directory review.
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # End-to-end sync simulation; QUICK=1 skips the slowest stress scenario.
+      - name: Test
+        env:
+          QUICK: "1"
+        run: npm test

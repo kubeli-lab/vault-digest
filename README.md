@@ -102,6 +102,8 @@ Commits and PR titles follow [Conventional Commits](https://www.conventionalcomm
 
 The release workflow only runs when code files change (`main.ts`, `styles.css`, build config, `package*.json`, `manifest.json`). Docs-only pushes such as `README.md` never trigger it, even with a `feat:` or `fix:` title. To run it manually, use the Actions tab or `gh workflow run release-please.yml`; it still needs at least one `feat:` or `fix:` commit since the last release, or a `Release-As: x.y.z` footer to force a version.
 
+`npm run lint` checks the code with [eslint-plugin-obsidianmd](https://github.com/obsidianmd/eslint-plugin), the rules of the Obsidian community directory review. The CI workflow runs the lint, the build and `QUICK=1 npm test` on every pull request.
+
 `npm test` runs an end-to-end simulation of several people syncing one remote (concurrent edits, conflicts, rejected pushes, offline). It runs the real plugin code with a stubbed `obsidian` module and needs only `git`. `QUICK=1 npm test` skips the slowest scenario.
 
 Pull requests are merged with **squash** (no merge commits), so the PR title must follow the convention.
