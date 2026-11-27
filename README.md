@@ -82,6 +82,15 @@ If your git binary is not accessible from your system PATH (i.e. if you open up 
 
 You can also include your GitHub username and personal access token in the remote url. Like so: `https://{username}:{personal access token}@github.com/{username}/{repository name}`. This is not recommended anymore, but it was how the plugin worked prior to 1.0.4. If you're doing this, you'll have to add `.obsidian/plugins/vault-digest/data.json` to your `.gitignore`.
 
+## Security and privacy
+
+Vault Digest is desktop only. It needs two capabilities that the Obsidian community directory flags:
+
+- **Shell execution**: the plugin runs the `git` binary (through [simple-git](https://github.com/steveukx/git-js), and `git mergetool` when you resolve conflicts). It only runs `git`, from the location in the settings or your system PATH, inside your vault folder.
+- **Filesystem access**: simple-git uses the Node.js `fs` module to check that the vault folder exists. The plugin itself reads conflicted files through the Obsidian vault adapter.
+
+Network access goes through git only, to the remote URL you configure. The plugin has no telemetry, and the commit message summary is computed locally: no diff is sent anywhere.
+
 ## Contributing
 
 Commits and PR titles follow [Conventional Commits](https://www.conventionalcommits.org/), because releases are automated with [release-please](https://github.com/googleapis/release-please):

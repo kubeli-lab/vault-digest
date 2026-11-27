@@ -1,7 +1,6 @@
-import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, SettingDefinition, SettingDefinitionItem } from 'obsidian';
+import { App, FileSystemAdapter, normalizePath, Notice, Plugin, PluginSettingTab, Setting, SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import { simpleGit, SimpleGit, SimpleGitOptions, StatusResult, DiffResult } from 'simple-git';
 import { execFile } from 'child_process';
-import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { analyzeDiff, digestSummary, digestDetails, fitSubject, fitBody, MAX_DIGEST_LINES, NoteDigest } from './digest';
@@ -371,7 +370,6 @@ export default class GHSyncPlugin extends Plugin {
 	// Conflicted files that still need a person: conflict markers still in the
 	// file, or a modify/delete decision not taken yet.
 	private async findUnresolvedConflicts(status: StatusResult): Promise<string[]> {
-		const base = this.vaultPath();
 		const needDecision = new Set(this.modifyDeleteFiles(status));
 		const unresolved: string[] = [];
 		for (const file of status.conflicted) {
@@ -380,7 +378,8 @@ export default class GHSyncPlugin extends Plugin {
 				continue;
 			}
 			try {
-				const text = await fs.readFile(path.join(base, file), "utf8");
+				// Adapter read: git paths can be hidden files the vault index skips.
+				const text = await this.app.vault.adapter.read(normalizePath(file));
 				if (/^<<<<<<< /m.test(text) && /^>>>>>>> /m.test(text)) {
 					unresolved.push(file);
 				}

@@ -5,4 +5,7 @@ export class Plugin { app: any; manifest: any; constructor(app: any, manifest: a
 export class PluginSettingTab { constructor(public app: any, public plugin: any) {} }
 export class Setting { constructor(_: any) {} setName() { return this; } setDesc() { return this; } addText() { return this; } addToggle() { return this; } addDropdown() { return this; } addButton() { return this; } }
 export class App {}
-export class FileSystemAdapter { constructor(private base: string) {} getBasePath() { return this.base; } }
+import { promises as fs } from 'fs';
+import * as path from 'path';
+export const normalizePath = (p: string) => p.replace(/\\/g, '/').replace(/\/+/g, '/');
+export class FileSystemAdapter { constructor(private base: string) {} getBasePath() { return this.base; } read(p: string) { return fs.readFile(path.join(this.base, p), 'utf8'); } }
